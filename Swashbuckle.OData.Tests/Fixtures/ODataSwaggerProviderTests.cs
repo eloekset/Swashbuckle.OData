@@ -208,6 +208,57 @@ namespace Swashbuckle.OData.Tests
             
         }
 
+        [Test]
+        public async Task It_throws_descriptive_error_message_on_no_ConflictingActionsResolver()
+        {
+            Action<IAppBuilder> buildApp = a =>
+            {
+                var config = new System.Web.Http.HttpConfiguration
+                {
+                    IncludeErrorDetailPolicy = System.Web.Http.IncludeErrorDetailPolicy.Always
+                };
+                var server = new System.Web.Http.HttpServer(config);
+ 
+                a.UseWebApi(server);
+                config.EnableSwagger(c =>
+                {
+                    c.SingleApiVersion("v1", "My API");
+                    // This line is commented out by default. Test that we throw an exception with a descriptive message:
+                    //c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+
+                    //c.CustomProvider(defaultProvider => new ODataSwaggerProvider(defaultProvider, c, config));
+                }).EnableSwaggerUi();
+
+                //var controllerSelector = new UnitTestODataVersionControllerSelector(config, new Type[] { typeof(CustomersController) });
+                //config.Services.Replace(typeof(IHttpControllerSelector), controllerSelector);
+
+                WebApiConfig.Register(config);
+
+                // Define a default non- versioned route(default route should be at the end as a last catch-all)
+                config.MapODataServiceRoute("DefaultODataRoute", "odata", GetDefaultModel());
+
+                config.EnsureInitialized();
+            };
+            using (WebApp.Start(HttpClientUtils.BaseAddress, buildApp))
+            {
+                var httpClient = HttpClientUtils.GetHttpClient(HttpClientUtils.BaseAddress);
+                Exception actualException = null;
+
+                try
+                {
+                    var customAssembliesResolverSwaggerDoc = await httpClient.GetJsonAsync<SwaggerDocument>("swagger/docs/v1");
+                }
+                catch (Exception ex)
+                {
+                    actualException = ex;
+                }
+
+                actualException.Should().NotBeNull("OData API has conflicting actions that must be resolved.");
+                actualException.Should().BeOfType<InvalidOperationException>("Avoid NullReferenceException that gives the user no clue about the reason.");
+                actualException.Message.Should().Be("ResolveConflictingActions is not configured for Swagger.", "Provide a descriptive error message.");
+            }
+        }
+
         private class TestAssembliesResolver : DefaultAssembliesResolver
         {
             public override ICollection<Assembly> GetAssemblies()
